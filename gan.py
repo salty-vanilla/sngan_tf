@@ -10,6 +10,8 @@ class GAN:
     def __init__(self, generator,
                  discriminator,
                  metrics='JSD',
+                 lr_d=1e-4,
+                 lr_g=1e-4,
                  is_training=True):
         self.discriminator = discriminator
         self.generator = generator
@@ -30,7 +32,7 @@ class GAN:
                                                             labels=tf.zeros_like(self.discriminate_fake)))
                 self.loss_d += tf.reduce_mean(
                     tf.nn.sigmoid_cross_entropy_with_logits(logits=self.discriminate_real,
-                                                            labels=tf.ones_like(self.discriminate_fake)))
+                                                            labels=tf.ones_like(self.discriminate_real)))
                 self.loss_d /= 2
 
                 self.loss_g = tf.reduce_mean(
@@ -47,17 +49,17 @@ class GAN:
         if is_training:
             with tf.name_scope('Optimizer'):
                 if metrics == 'JSD':
-                    self.opt_d = tf.train.AdamOptimizer(learning_rate=1e-3, beta1=0.5, beta2=0.9) \
+                    self.opt_d = tf.train.AdamOptimizer(learning_rate=lr_d, beta1=0.5, beta2=0.99) \
                         .minimize(self.loss_d,
                                   var_list=self.discriminator.vars)
-                    self.opt_g = tf.train.AdamOptimizer(learning_rate=1e-5, beta1=0.5, beta2=0.9) \
+                    self.opt_g = tf.train.AdamOptimizer(learning_rate=lr_g, beta1=0.5, beta2=0.99) \
                         .minimize(self.loss_g,
                                   var_list=self.generator.vars)
                 elif metrics == 'WD':
-                    self.opt_d = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9) \
+                    self.opt_d = tf.train.AdamOptimizer(learning_rate=lr_d, beta1=0.5, beta2=0.99) \
                         .minimize(self.loss_d,
                                   var_list=self.discriminator.vars)
-                    self.opt_g = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9) \
+                    self.opt_g = tf.train.AdamOptimizer(learning_rate=lr_g, beta1=0.5, beta2=0.99) \
                         .minimize(self.loss_g,
                                   var_list=self.generator.vars)
                 else:
@@ -67,7 +69,19 @@ class GAN:
         self.model_dir = None
         self.sess.run(tf.global_variables_initializer())
         self.is_training = False
-        tf.summary.FileWriter('../logs', graph=self.sess.graph)
+
+        # self.hists = [tf.summary.histogram('model/discriminator/sn_conv_block_5/sn_conv2d/weight',
+        #                                    self.sess.graph.get_tensor_by_name(
+        #                                        'model/discriminator/sn_conv_block_5/sn_conv2d/weight:0')),
+        #               tf.summary.histogram('model/discriminator/sn_conv_block_5/sn_conv2d/weight_sn',
+        #                                    self.sess.graph.get_tensor_by_name(
+        #                                        'model/discriminator/sn_conv_block_5/sn_conv2d/weight_sn:0')),
+        #               tf.summary.histogram('model/discriminator/sn_conv_block_5/sn_conv2d/weight_divided_by_sigma',
+        #                                    self.sess.graph.get_operation_by_name(
+        #                                        'model/discriminator/sn_conv_block_5/sn_conv2d/'
+        #                                        'cond/model/discriminator/sn_conv_block_5/sn_conv2d/truediv').outputs[0])
+        #               ]
+        self.tb_writer = tf.summary.FileWriter('../logs', graph=self.sess.graph)
 
     def fit(self, image_sampler,
             noise_sampler,
@@ -116,6 +130,13 @@ class GAN:
                       .format(iter_, steps_per_epoch, time.time() - start,
                               loss_d, loss_g), end='')
                 writer.writerow([loss_d, loss_g])
+
+                # summary = self.sess.run(self.hists,
+                #                         feed_dict={self.discriminator.is_training: True})
+                # for s in summary:
+                #     self.tb_writer.add_summary(s, global_step=epoch*steps_per_epoch + iter_)
+                # self.tb_writer.flush()
+
             if epoch % visualize_steps == 0:
                 noise_batch = noise_sampler(batch_size, self.noise_dim)
                 self.visualize(os.path.join(result_dir, 'epoch_{}'.format(epoch)),

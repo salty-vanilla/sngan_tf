@@ -3,16 +3,21 @@ from layers import activation
 from tensorflow.python.layers.base import Layer
 
 
+def l2_normalize(x, eps=1e-12):
+    return x / (tf.reduce_sum(x**2)**0.5 + eps)
+
+
 def get_max_singular_value(w, u, ip=1, eps=1e-12):
     with tf.variable_scope('PowerIteration'):
         _u = u
+        _v = None
         for _ in range(ip):
             _v = tf.matmul(_u, w)
-            _v = _v / (tf.reduce_sum(_v**2)**0.5 + eps)
+            _v = l2_normalize(_v, eps)
             _u = tf.matmul(_v, tf.transpose(w))
-            _u = _u / (tf.reduce_sum(_u**2)**0.5 + eps)
-
-        sigma = tf.reduce_sum((tf.matmul(_u, w) * _v))
+            _u = l2_normalize(_u, eps)
+        sigma = tf.matmul(_u,
+                          tf.matmul(w, tf.transpose(_v)))
     return sigma, _u
 
 
@@ -44,23 +49,26 @@ class SNConv2d(Layer):
         self.w = self.add_variable('weight',
                                    (self.kernel_size[1], self.kernel_size[0], input_shape[-1], self.filters),
                                    tf.float32,
+                                   initializer=tf.truncated_normal_initializer(stddev=0.02),
                                    trainable=True)
         self.bias = self.add_variable('bias',
                                       (self.filters,),
                                       tf.float32,
+                                      initializer=tf.constant_initializer(0.0),
                                       trainable=True)
         self.u = self.add_variable('u',
                                    (1, self.filters),
                                    tf.float32,
-                                   initializer=tf.initializers.random_normal,
+                                   initializer=tf.truncated_normal_initializer(stddev=0.02),
                                    trainable=False)
         self.w_sn = self.add_variable('weight_sn',
                                       (self.kernel_size[1], self.kernel_size[0], input_shape[-1], self.filters),
                                       tf.float32,
+                                      initializer=tf.truncated_normal_initializer(stddev=0.02),
                                       trainable=False)
         self.built = True
 
-    def call(self, x):
+    def call(self, x, *args, **kwargs):
         return tf.cond(
             self.is_training,
             lambda: self._layer(x, is_training=True, reuse=None),
@@ -68,23 +76,22 @@ class SNConv2d(Layer):
         )
 
     def _layer(self, x, is_training, reuse):
-        with tf.variable_scope(self.scope_name, reuse=reuse) as vs:
+        with tf.variable_scope(self.scope_name, reuse=reuse):
             control_inputs = []
             if is_training:
                 w_mat = tf.transpose(self.w, (3, 2, 0, 1))
                 w_mat = tf.reshape(w_mat,
                                    (w_mat.shape[0], w_mat.shape[1] * w_mat.shape[2] * w_mat.shape[3]))
                 sigma, _u = get_max_singular_value(w_mat, self.u)
+                w = self.w / sigma
 
                 control_inputs.append(tf.assign(self.u, _u))
-                control_inputs.append(tf.assign(self.w_sn, self.w / sigma))
-
+                control_inputs.append(tf.assign(self.w_sn, w))
             else:
-                pass
-
+                w = self.w_sn
             with tf.control_dependencies(control_inputs):
                 _h = tf.nn.bias_add(tf.nn.conv2d(x,
-                                                 self.w_sn,
+                                                 w,
                                                  strides=self.strides,
                                                  padding=self.padding),
                                     self.bias)
@@ -106,23 +113,26 @@ class SNDense(Layer):
         self.w = self.add_variable('weight',
                                    (input_shape[-1], self.units),
                                    tf.float32,
+                                   initializer=tf.truncated_normal_initializer(stddev=0.02),
                                    trainable=True)
         self.bias = self.add_variable('bias',
                                       (self.units,),
                                       tf.float32,
+                                      initializer=tf.constant_initializer(0.0),
                                       trainable=True)
         self.u = self.add_variable('u',
                                    (1, self.units),
                                    tf.float32,
-                                   initializer=tf.initializers.random_normal,
+                                   initializer=tf.truncated_normal_initializer(stddev=0.02),
                                    trainable=False)
         self.w_sn = self.add_variable('weight_sn',
                                       (input_shape[-1], self.units),
                                       tf.float32,
+                                      initializer=tf.truncated_normal_initializer(stddev=0.02),
                                       trainable=False)
         self.built = True
 
-    def call(self, x):
+    def call(self, x, *args, **kwargs):
         return tf.cond(
             self.is_training,
             lambda: self._layer(x, is_training=True, reuse=None),
@@ -135,13 +145,14 @@ class SNDense(Layer):
             if is_training:
                 w_mat = tf.transpose(self.w)
                 sigma, _u = get_max_singular_value(w_mat, self.u)
+                w = self.w / sigma
 
                 control_inputs.append(tf.assign(self.u, _u))
-                control_inputs.append(tf.assign(self.w_sn, self.w / sigma))
+                control_inputs.append(tf.assign(self.w_sn, w))
             else:
-                pass
+                w = self.w_sn
         with tf.control_dependencies(control_inputs):
-            _h = tf.nn.bias_add(tf.matmul(x, self.w_sn),
+            _h = tf.nn.bias_add(tf.matmul(x, w),
                                 self.bias)
             return activation(_h, self.activation)
 

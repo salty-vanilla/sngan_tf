@@ -13,7 +13,7 @@ def conv_block(x,
                mode='conv_first'):
     assert mode in ['conv_first', 'normalization_first']
     assert sampling in ['deconv', 'subpixel', 'down', 'same']
-    assert normalization in ['batch', 'layer', None]
+    assert normalization in ['batch', 'layer', 'spectral', None]
 
     conv_func = conv2d_transpose if sampling == 'deconv' \
         else subpixel_conv2d if sampling == 'subpixel'\
@@ -24,6 +24,15 @@ def conv_block(x,
     strides = (1, 1) if sampling in ['same', 'subpixel'] else (2, 2)
 
     with tf.variable_scope(None, conv_block.__name__):
+        if normalization == 'spectral':
+            return sn_conv_block(x,
+                                 is_training,
+                                 filters,
+                                 activation_,
+                                 kernel_size,
+                                 sampling,
+                                 dropout_rate)
+
         if mode == 'conv_first':
             _x = conv_func(x,
                            filters,
@@ -117,7 +126,7 @@ def sn_conv_block(x,
                   dropout_rate=0.0):
     strides = (1, 1) if sampling == 'same' else (2, 2)
 
-    with tf.variable_scope(None, sn_conv_block.__name__) as vs:
+    with tf.variable_scope(None, sn_conv_block.__name__):
         _x = sn_conv2d(x,
                        is_training,
                        filters,

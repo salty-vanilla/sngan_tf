@@ -2,10 +2,13 @@ import tensorflow as tf
 
 
 class Discriminator:
-    def __init__(self, input_shape):
-        self.is_training = tf.placeholder(tf.bool, name='is_training_d')
+    def __init__(self, input_shape,
+                 normalization=None):
         self.input_shape = input_shape
         self.name = 'model/discriminator'
+        self.normalization = normalization
+        with tf.variable_scope(self.name):
+            self.is_training = tf.placeholder(tf.bool, name='is_training')
 
         self.conv_kwargs = {'activation_': 'lrelu'}
 
@@ -23,7 +26,6 @@ class Generator:
                  color_mode='rgb',
                  normalization='batch',
                  upsampling='deconv'):
-        self.is_training = tf.placeholder(tf.bool, name='is_training_g')
         self.noise_dim = noise_dim
         self.last_activation = last_activation
         self.name = 'model/generator'
@@ -31,6 +33,8 @@ class Generator:
         self.channel = 1 if color_mode in ['grayscale', 'gray'] else 3
         self.normalization = normalization
         self.upsampling = upsampling
+        with tf.variable_scope(self.name):
+            self.is_training = tf.placeholder(tf.bool, name='is_training')
 
         self.conv_kwargs = {'activation_': 'relu',
                             'normalization': self.normalization}

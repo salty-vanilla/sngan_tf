@@ -25,6 +25,10 @@ def main():
     parser.add_argument('--noise_mode', '-nm', type=str, default="uniform")
     parser.add_argument('--upsampling', '-up', type=str, default="deconv")
     parser.add_argument('--metrics', '-m', type=str, default="JSD")
+    parser.add_argument('--lr_d', type=float, default=1e-4)
+    parser.add_argument('--lr_g', type=float, default=1e-4)
+    parser.add_argument('--norm_d', type=str, default=None)
+    parser.add_argument('--norm_g', type=str, default=None)
 
     args = parser.parse_args()
 
@@ -45,11 +49,14 @@ def main():
 
     generator = Generator(args.noise_dim,
                           upsampling=args.upsampling,
-                          normalization='batch')
-    discriminator = Discriminator(input_shape)
+                          normalization=args.norm_g)
+    discriminator = Discriminator(input_shape,
+                                  normalization=args.norm_d)
     gan = GAN(generator,
               discriminator,
-              metrics=args.metrics)
+              metrics=args.metrics,
+              lr_d=args.lr_d,
+              lr_g=args.lr_g)
 
     gan.fit(image_sampler.flow_from_directory(args.batch_size),
             noise_sampler,
