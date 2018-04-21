@@ -52,16 +52,15 @@ class ResidualGenerator(G):
                                     dropout_rate=0.,
                                     mode='conv_first')
 
-            for i in range(4):
-                _x = conv_block(_x,
-                                is_training=is_training,
-                                kernel_size=(3, 3),
-                                filters=self.channel,
-                                activation_='relu' if i < 4 else self.last_activation,
-                                sampling='same',
-                                normalization=None,
-                                dropout_rate=0.,
-                                mode='conv_first')
+            _x = conv_block(_x,
+                            is_training=is_training,
+                            kernel_size=(9, 9),
+                            filters=self.channel,
+                            activation_=self.last_activation,
+                            sampling='same',
+                            normalization=None,
+                            dropout_rate=0.,
+                            mode='conv_first')
             return _x
 
 
