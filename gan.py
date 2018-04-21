@@ -12,6 +12,7 @@ class GAN:
                  metrics='JSD',
                  lr_d=1e-4,
                  lr_g=1e-4,
+                 eps=1e-12,
                  is_training=True):
         self.discriminator = discriminator
         self.generator = generator
@@ -20,24 +21,29 @@ class GAN:
         self.image = tf.placeholder(tf.float32, [None] + list(self.image_shape), name='x')
         self.noise = tf.placeholder(tf.float32, [None, self.noise_dim], name='z')
 
-        self.generate = self.generator(self.noise)
+        self.generate = self.generator(self.noise, reuse=False, is_training=True)
+        self.generate_ = self.generator(self.noise, reuse=True, is_training=False)
 
-        self.discriminate_real = self.discriminator(self.image, reuse=False)
-        self.discriminate_fake = self.discriminator(self.generate, reuse=True)
+        self.discriminate_real = self.discriminator(self.image, reuse=False, is_training=True)
+        self.discriminate_fake = self.discriminator(self.generate, reuse=True, is_training=True)
+
+        self.discriminate_fake_ = self.discriminator(self.generate, reuse=True, is_training=False)
 
         with tf.name_scope('loss'):
             if metrics == 'JSD':
-                self.loss_d = tf.reduce_mean(
-                    tf.nn.sigmoid_cross_entropy_with_logits(logits=self.discriminate_fake,
-                                                            labels=tf.zeros_like(self.discriminate_fake)))
-                self.loss_d += tf.reduce_mean(
-                    tf.nn.sigmoid_cross_entropy_with_logits(logits=self.discriminate_real,
-                                                            labels=tf.ones_like(self.discriminate_real)))
-                self.loss_d /= 2
+                real_loss = tf.reduce_mean(
+                    tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(self.discriminate_real),
+                                                            logits=self.discriminate_real))
+                fake_loss = tf.reduce_mean(
+                    tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(self.discriminate_fake),
+                                                            logits=self.discriminate_fake))
+
+                self.loss_d = real_loss + fake_loss
 
                 self.loss_g = tf.reduce_mean(
-                    tf.nn.sigmoid_cross_entropy_with_logits(logits=self.discriminate_fake,
-                                                            labels=tf.ones_like(self.discriminate_fake)))
+                    tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(self.discriminate_fake_),
+                                                            logits=self.discriminate_fake_))
+
             elif metrics == 'WD':
                 self.loss_g = -tf.reduce_mean(self.discriminate_fake)
                 self.loss_d = -(tf.reduce_mean(self.discriminate_real)
@@ -70,17 +76,6 @@ class GAN:
         self.sess.run(tf.global_variables_initializer())
         self.is_training = False
 
-        # self.hists = [tf.summary.histogram('model/discriminator/sn_conv_block_5/sn_conv2d/weight',
-        #                                    self.sess.graph.get_tensor_by_name(
-        #                                        'model/discriminator/sn_conv_block_5/sn_conv2d/weight:0')),
-        #               tf.summary.histogram('model/discriminator/sn_conv_block_5/sn_conv2d/weight_sn',
-        #                                    self.sess.graph.get_tensor_by_name(
-        #                                        'model/discriminator/sn_conv_block_5/sn_conv2d/weight_sn:0')),
-        #               tf.summary.histogram('model/discriminator/sn_conv_block_5/sn_conv2d/weight_divided_by_sigma',
-        #                                    self.sess.graph.get_operation_by_name(
-        #                                        'model/discriminator/sn_conv_block_5/sn_conv2d/'
-        #                                        'cond/model/discriminator/sn_conv_block_5/sn_conv2d/truediv').outputs[0])
-        #               ]
         self.tb_writer = tf.summary.FileWriter('../logs', graph=self.sess.graph)
 
     def fit(self, image_sampler,
@@ -118,24 +113,14 @@ class GAN:
                 noise_batch = noise_sampler(image_batch.shape[0], self.noise_dim)
                 _, loss_d, = self.sess.run([self.opt_d, self.loss_d],
                                            feed_dict={self.image: image_batch,
-                                                      self.noise: noise_batch,
-                                                      self.discriminator.is_training: True,
-                                                      self.generator.is_training: False})
+                                                      self.noise: noise_batch})
                 _, loss_g = self.sess.run([self.opt_g, self.loss_g],
-                                          feed_dict={self.noise: noise_batch,
-                                                     self.discriminator.is_training: False,
-                                                     self.generator.is_training: True})
+                                          feed_dict={self.noise: noise_batch})
 
                 print('iter : {} / {}  {:.1f}[s]  loss_d : {:.4f}  loss_g : {:.4f}  \r'
                       .format(iter_, steps_per_epoch, time.time() - start,
                               loss_d, loss_g), end='')
                 writer.writerow([loss_d, loss_g])
-
-                # summary = self.sess.run(self.hists,
-                #                         feed_dict={self.discriminator.is_training: True})
-                # for s in summary:
-                #     self.tb_writer.add_summary(s, global_step=epoch*steps_per_epoch + iter_)
-                # self.tb_writer.flush()
 
             if epoch % visualize_steps == 0:
                 noise_batch = noise_sampler(batch_size, self.noise_dim)
@@ -196,6 +181,5 @@ class GAN:
         return outputs
 
     def predict_on_batch(self, x):
-        return self.sess.run(self.generate,
-                             feed_dict={self.noise: x,
-                                        self.generator.is_training: False})
+        return self.sess.run(self.generate_,
+                             feed_dict={self.noise: x})

@@ -23,12 +23,12 @@ def get_max_singular_value(w, u, ip=1, eps=1e-12):
 
 class SNConv2d(Layer):
     def __init__(self,
-                 is_training,
                  filters,
                  kernel_size=(3, 3),
                  strides=(1, 1),
                  padding='same',
-                 activation_='relu'):
+                 activation_='relu',
+                 is_training=True):
         self.is_training = is_training
         self.filters = filters
         self.kernel_size = kernel_size
@@ -46,7 +46,7 @@ class SNConv2d(Layer):
 
     def build(self, input_shape):
         self._input_shape = input_shape
-        self.w = self.add_variable('weight',
+        self.w = self.add_variable('kernel',
                                    (self.kernel_size[1], self.kernel_size[0], input_shape[-1], self.filters),
                                    tf.float32,
                                    initializer=tf.truncated_normal_initializer(stddev=0.02),
@@ -61,7 +61,7 @@ class SNConv2d(Layer):
                                    tf.float32,
                                    initializer=tf.truncated_normal_initializer(stddev=0.02),
                                    trainable=False)
-        self.w_sn = self.add_variable('weight_sn',
+        self.w_sn = self.add_variable('kernel_sn',
                                       (self.kernel_size[1], self.kernel_size[0], input_shape[-1], self.filters),
                                       tf.float32,
                                       initializer=tf.truncated_normal_initializer(stddev=0.02),
@@ -69,19 +69,15 @@ class SNConv2d(Layer):
         self.built = True
 
     def call(self, x, *args, **kwargs):
-        return tf.cond(
-            self.is_training,
-            lambda: self._layer(x, is_training=True, reuse=None),
-            lambda: self._layer(x, is_training=False, reuse=True),
-        )
+        with tf.variable_scope(self.scope_name) as vs:
+            if not self.is_training:
+                vs.reuse_variables()
 
-    def _layer(self, x, is_training, reuse):
-        with tf.variable_scope(self.scope_name, reuse=reuse):
             control_inputs = []
-            if is_training:
+            if self.is_training:
                 w_mat = tf.transpose(self.w, (3, 2, 0, 1))
                 w_mat = tf.reshape(w_mat,
-                                   (w_mat.shape[0], w_mat.shape[1] * w_mat.shape[2] * w_mat.shape[3]))
+                                   (w_mat.shape[0], -1))
                 sigma, _u = get_max_singular_value(w_mat, self.u)
                 w = self.w / sigma
 
@@ -100,9 +96,9 @@ class SNConv2d(Layer):
 
 class SNDense(Layer):
     def __init__(self,
-                 is_training,
                  units,
-                 activation_='relu'):
+                 activation_='relu',
+                 is_training=True):
         self.is_training = is_training
         self.units = units
         self.activation = activation_
@@ -110,7 +106,7 @@ class SNDense(Layer):
 
     def build(self, input_shape):
         self._input_shape = input_shape
-        self.w = self.add_variable('weight',
+        self.w = self.add_variable('kernel',
                                    (input_shape[-1], self.units),
                                    tf.float32,
                                    initializer=tf.truncated_normal_initializer(stddev=0.02),
@@ -125,7 +121,7 @@ class SNDense(Layer):
                                    tf.float32,
                                    initializer=tf.truncated_normal_initializer(stddev=0.02),
                                    trainable=False)
-        self.w_sn = self.add_variable('weight_sn',
+        self.w_sn = self.add_variable('kernel_sn',
                                       (input_shape[-1], self.units),
                                       tf.float32,
                                       initializer=tf.truncated_normal_initializer(stddev=0.02),
@@ -133,16 +129,11 @@ class SNDense(Layer):
         self.built = True
 
     def call(self, x, *args, **kwargs):
-        return tf.cond(
-            self.is_training,
-            lambda: self._layer(x, is_training=True, reuse=None),
-            lambda: self._layer(x, is_training=False, reuse=True)
-        )
-
-    def _layer(self, x, is_training, reuse):
-        with tf.variable_scope('SpectralNormalization', reuse=reuse):
+        with tf.variable_scope(self.scope_name) as vs:
+            if not self.is_training:
+                vs.reuse_variables()
             control_inputs = []
-            if is_training:
+            if self.is_training:
                 w_mat = tf.transpose(self.w)
                 sigma, _u = get_max_singular_value(w_mat, self.u)
                 w = self.w / sigma
@@ -158,24 +149,24 @@ class SNDense(Layer):
 
 
 def sn_conv2d(x,
-              is_training,
               filters,
               kernel_size=(3, 3),
               strides=(1, 1),
+              padding='same',
               activation_='relu',
-              padding='same'):
-    return SNConv2d(is_training,
-                    filters,
+              is_training=True):
+    return SNConv2d(filters,
                     kernel_size,
                     strides,
                     padding,
-                    activation_)(x)
+                    activation_,
+                    is_training)(x)
 
 
 def sn_dense(x,
-             is_training,
              units,
-             activation_='relu'):
-    return SNDense(is_training,
-                   units,
-                   activation_)(x)
+             activation_='relu',
+             is_training=True):
+    return SNDense(units,
+                   activation_,
+                   is_training)(x)

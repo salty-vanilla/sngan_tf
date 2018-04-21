@@ -155,6 +155,7 @@ def conv2d_transpose(x, filters,
 def subpixel_conv2d(x, filters,
                     rate=2,
                     kernel_size=(3, 3),
+                    activation_: str = None,
                     kernel_initializer='glorot_uniform',
                     bias_initializer='zeros',
                     kernel_regularizer=None,
@@ -164,7 +165,7 @@ def subpixel_conv2d(x, filters,
         _x = conv2d(x, filters*(rate**2),
                     kernel_size,
                     strides=(1, 1),
-                    activation_=None,
+                    activation_=activation_,
                     kernel_initializer=kernel_initializer,
                     bias_initializer=bias_initializer,
                     kernel_regularizer=kernel_regularizer,
@@ -176,15 +177,7 @@ def subpixel_conv2d(x, filters,
 
 def pixel_shuffle(x, r=2):
     with tf.name_scope(pixel_shuffle.__name__):
-        bs = tf.shape(x)[0]
-        _, h, w, c = x.get_shape().as_list()
-
-        _x = tf.transpose(x, (0, 3, 1, 2))
-        _x = tf.reshape(_x, (bs, r, r, c//(r**2), h, w))
-        _x = tf.transpose(_x, (0, 3, 4, 1, 5, 2))
-        _x = tf.reshape(_x, (bs, c//(r**2), h*r, w*r))
-        _x = tf.transpose(_x, (0, 2, 3, 1))
-    return _x
+        return tf.depth_to_space(x, r)
 
 
 def reshape(x, target_shape):
@@ -226,68 +219,5 @@ def average_pool2d(x,
     return kl.AveragePooling2D(kernel_size, strides, padding)(x)
 
 
-class BatchNorm(Layer):
-    def __init__(self,
-                 is_training,
-                 epsilon=0.001,
-                 decay=0.99):
-        self.is_training = is_training
-        self.epsilon = epsilon
-        self.decay = decay
-
-        super().__init__()
-
-    def build(self, input_shape):
-        self._input_shape = input_shape
-        self.gamma = tf.get_variable("gamma", input_shape[-1],
-                                     initializer=tf.constant_initializer(1.0), trainable=True)
-        self.beta = tf.get_variable("beta", input_shape[-1],
-                                    initializer=tf.constant_initializer(0.0), trainable=True)
-        self.moving_avg = tf.get_variable("moving_avg", input_shape[-1],
-                                          initializer=tf.constant_initializer(0.0), trainable=False)
-        self.moving_var = tf.get_variable("moving_var", input_shape[-1],
-                                          initializer=tf.constant_initializer(1.0), trainable=False)
-        self.built = True
-
-    def call(self, x, *args, **kwargs):
-        return tf.cond(
-            self.is_training,
-            lambda: self._layer(x, is_training=True, reuse=None),
-            lambda: self._layer(x, is_training=False, reuse=True)
-        )
-
-    def _layer(self, x, is_training, reuse):
-        with tf.variable_scope(self.scope_name, reuse=reuse):
-            if is_training:
-                avg, var = tf.nn.moments(x, np.arange(len(self._input_shape) - 1), keep_dims=True)
-                avg = tf.reshape(avg, [avg.shape.as_list()[-1]])
-                var = tf.reshape(var, [var.shape.as_list()[-1]])
-
-                update_moving_avg = tf.assign(self.moving_avg, self.moving_avg * self.decay + avg * (1 - self.decay))
-                update_moving_var = tf.assign(self.moving_var, self.moving_var * self.decay + var * (1 - self.decay))
-                control_inputs = [update_moving_avg, update_moving_var]
-            else:
-                avg = self.moving_avg
-                var = self.moving_var
-                control_inputs = []
-            with tf.control_dependencies(control_inputs):
-                output = tf.nn.batch_normalization(x, avg, var, offset=self.beta, scale=self.gamma,
-                                                   variance_epsilon=self.epsilon)
-
-        return output
-
-
-def batch_norm(x, is_training, epsilon=0.001, decay=0.99):
-    """
-    Args
-        x: input_tensor
-        is_training: tf.placeholder(tf.bool, shape=())
-        epsilon: float
-        decay: float
-    Returns
-        tensor
-            shape: input_shape
-    """
-    return BatchNorm(is_training,
-                     epsilon=epsilon,
-                     decay=decay)(x)
+def batch_norm(x, is_training=True):
+    return tl.batch_norm(x, scale=True, updates_collections=None, is_training=is_training)

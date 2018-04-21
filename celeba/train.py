@@ -4,8 +4,8 @@ import sys
 import pandas as pd
 sys.path.append(os.getcwd())
 from gan import GAN
-from celeba.generator import Generator
-from celeba.discriminator import Discriminator
+from celeba.generator import ResidualGenerator as Generator
+from celeba.discriminator import ResidualDiscriminator as Discriminator
 from image_sampler import ImageSampler
 from noise_sampler import NoiseSampler
 
