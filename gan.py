@@ -22,12 +22,9 @@ class GAN:
         self.noise = tf.placeholder(tf.float32, [None, self.noise_dim], name='z')
 
         self.generate = self.generator(self.noise, reuse=False, is_training=True)
-        self.generate_ = self.generator(self.noise, reuse=True, is_training=False)
 
         self.discriminate_real = self.discriminator(self.image, reuse=False, is_training=True)
         self.discriminate_fake = self.discriminator(self.generate, reuse=True, is_training=True)
-
-        self.discriminate_fake_ = self.discriminator(self.generate, reuse=True, is_training=False)
 
         with tf.name_scope('loss'):
             if metrics == 'JSD':
@@ -41,8 +38,8 @@ class GAN:
                 self.loss_d = real_loss + fake_loss
 
                 self.loss_g = tf.reduce_mean(
-                    tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(self.discriminate_fake_),
-                                                            logits=self.discriminate_fake_))
+                    tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(self.discriminate_fake),
+                                                            logits=self.discriminate_fake))
 
             elif metrics == 'WD':
                 self.loss_g = -tf.reduce_mean(self.discriminate_fake)
@@ -72,27 +69,26 @@ class GAN:
                     raise NotImplementedError
         self.saver = tf.train.Saver()
         self.sess = tf.Session()
-        self.model_dir = None
         self.sess.run(tf.global_variables_initializer())
         self.is_training = False
-
-        self.tb_writer = tf.summary.FileWriter('../logs', graph=self.sess.graph)
+        self.logdir = None
+        self.tb_writer = None
 
     def fit(self, image_sampler,
             noise_sampler,
             nb_epoch=1000,
             visualize_steps=1,
             save_steps=1,
-            result_dir='result',
-            model_dir='model'):
+            logdir='../logs'):
+        self.logdir = logdir
+        os.makedirs(logdir, exist_ok=True)
+        self.tb_writer = tf.summary.FileWriter(logdir, graph=self.sess.graph)
+
         batch_size = image_sampler.batch_size
         nb_sample = image_sampler.nb_sample
-        self.model_dir = model_dir
 
         # prepare for csv
-        if not os.path.exists(result_dir):
-            os.makedirs(result_dir)
-        f = open(os.path.join(result_dir, 'learning_log.csv'), 'w')
+        f = open(os.path.join(logdir, 'learning_log.csv'), 'w')
         writer = csv.writer(f, lineterminator='\n')
 
         # calc steps_per_epoch
@@ -104,12 +100,16 @@ class GAN:
         loss_g = 0
         writer.writerow(['loss_d', 'loss_g'])
 
+        fixed_noise = noise_sampler(batch_size, self.noise_dim)
+
         # fit loop
         for epoch in range(1, nb_epoch + 1):
             print('\nepoch {} / {}'.format(epoch, nb_epoch))
             start = time.time()
             for iter_ in range(1, steps_per_epoch + 1):
                 image_batch = image_sampler()
+                # if image_batch.shape[0] != batch_size:
+                #     continue
                 noise_batch = noise_sampler(image_batch.shape[0], self.noise_dim)
                 _, loss_d, = self.sess.run([self.opt_d, self.loss_d],
                                            feed_dict={self.image: image_batch,
@@ -123,9 +123,9 @@ class GAN:
                 writer.writerow([loss_d, loss_g])
 
             if epoch % visualize_steps == 0:
-                noise_batch = noise_sampler(batch_size, self.noise_dim)
-                self.visualize(os.path.join(result_dir, 'epoch_{}'.format(epoch)),
-                               noise_batch, image_sampler.data_to_image)
+                # noise_batch = noise_sampler(batch_size, self.noise_dim)
+                self.visualize(os.path.join(logdir, 'epoch_{}'.format(epoch)),
+                               fixed_noise, image_sampler.data_to_image)
             if epoch % save_steps == 0:
                 self.save(epoch)
         print('\nTraining is done ...\n')
@@ -165,7 +165,7 @@ class GAN:
             pil_image.save(dst_path)
 
     def save(self, epoch):
-        dst_dir = os.path.join(self.model_dir, "epoch_{}".format(epoch))
+        dst_dir = os.path.join(self.logdir, "epoch_{}".format(epoch))
         if not os.path.exists(dst_dir):
             os.makedirs(dst_dir)
         return self.saver.save(self.sess, save_path=os.path.join(dst_dir, 'model.ckpt'))
@@ -181,5 +181,5 @@ class GAN:
         return outputs
 
     def predict_on_batch(self, x):
-        return self.sess.run(self.generate_,
+        return self.sess.run(self.generate,
                              feed_dict={self.noise: x})

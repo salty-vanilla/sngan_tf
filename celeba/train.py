@@ -1,8 +1,8 @@
 import argparse
 import os
 import sys
-import pandas as pd
 sys.path.append(os.getcwd())
+from utils.config import args_to_csv
 from gan import GAN
 from celeba.generator import ResidualGenerator as Generator
 from celeba.discriminator import ResidualDiscriminator as Discriminator
@@ -20,8 +20,7 @@ def main():
     parser.add_argument('--width', '-wd', type=int, default=128)
     parser.add_argument('--save_steps', '-ss', type=int, default=1)
     parser.add_argument('--visualize_steps', '-vs', type=int, default=1)
-    parser.add_argument('--model_dir', '-md', type=str, default="./params")
-    parser.add_argument('--result_dir', '-rd', type=str, default="./result")
+    parser.add_argument('--logdir', '-ld', type=str, default="../logs")
     parser.add_argument('--noise_mode', '-nm', type=str, default="uniform")
     parser.add_argument('--upsampling', '-up', type=str, default="deconv")
     parser.add_argument('--metrics', '-m', type=str, default="JSD")
@@ -32,14 +31,8 @@ def main():
 
     args = parser.parse_args()
 
-    os.makedirs(args.result_dir, exist_ok=True)
-    os.makedirs(args.model_dir, exist_ok=True)
-
     # output config to csv
-    config_path = os.path.join(args.result_dir, "config.csv")
-    dict_ = vars(args)
-    df = pd.DataFrame(list(dict_.items()), columns=['attr', 'status'])
-    df.to_csv(config_path, index=None)
+    args_to_csv(os.path.join(args.logdir, 'config.csv'), args)
 
     input_shape = (args.height, args.width, 3)
 
@@ -61,8 +54,7 @@ def main():
     gan.fit(image_sampler.flow_from_directory(args.batch_size),
             noise_sampler,
             nb_epoch=args.nb_epoch,
-            result_dir=args.result_dir,
-            model_dir=args.model_dir,
+            logdir=args.logdir,
             save_steps=args.save_steps,
             visualize_steps=args.visualize_steps)
 

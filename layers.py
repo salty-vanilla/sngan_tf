@@ -160,7 +160,8 @@ def subpixel_conv2d(x, filters,
                     bias_initializer='zeros',
                     kernel_regularizer=None,
                     bias_regularizer=None,
-                    is_training=True):
+                    is_training=True,
+                    **kwargs):
     with tf.variable_scope(None, subpixel_conv2d.__name__):
         _x = conv2d(x, filters*(rate**2),
                     kernel_size,
