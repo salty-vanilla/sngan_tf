@@ -1,6 +1,7 @@
 # Tensorflow Implementation of SNGAN
-Spectral Normalization for Generative Adversarial Networks  
-https://openreview.net/forum?id=B1QRgziT-&amp;noteId=BkxnM1TrM
+Spectral Normalization for Generative Adversarial Networks [[paper]](https://openreview.net/forum?id=B1QRgziT-&amp;noteId=BkxnM1TrM
+)
+
 
 ## Envirionments
 * python 3.6
