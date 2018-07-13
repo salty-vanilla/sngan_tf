@@ -1,6 +1,7 @@
 import os
 import sys
 import tensorflow as tf
+import numpy as np
 sys.path.append(os.getcwd())
 from models import Generator as G
 from layers import dense, reshape, batch_norm, layer_norm, \
@@ -9,16 +10,26 @@ from blocks import residual_block, conv_block
 
 
 def first_block(x,
+                target_size,
                 noise_dim,
+                upsampling='deconv',
                 normalization='batch',
                 is_training=True):
-    _x = reshape(x, (1, 1, noise_dim))
-    _x = conv2d_transpose(_x, 1024, (16, 16), strides=(1, 1), padding='valid')
+    if upsampling == 'deconv':
+        _x = reshape(x, (1, 1, noise_dim))
+        _x = conv2d_transpose(_x, 1024, target_size, strides=(1, 1), padding='valid')
+    elif upsampling == 'dense':
+        _x = dense(x, target_size[0]*target_size[1]*1024)
+        _x = reshape(_x, (target_size[1], target_size[0], 1024))
+    else:
+        raise ValueError
 
     if normalization == 'batch':
         _x = batch_norm(_x, is_training=is_training)
     elif normalization == 'layer':
         _x = layer_norm(_x, is_training=is_training)
+    elif normalization is None:
+        pass
     else:
         raise ValueError
     _x = activation(_x, 'relu')
@@ -27,20 +38,18 @@ def first_block(x,
 
 class ResidualGenerator(G):
     def __call__(self, x, reuse=False, is_training=True):
+        nb_upsampling = int(np.log2(self.target_size[0] // 16))
         with tf.variable_scope(self.name) as vs:
             if reuse:
                 vs.reuse_variables()
-            _x = first_block(x, self.noise_dim,
+
+            _x = first_block(x,
+                             (16, 16),
+                             self.noise_dim,
+                             'deconv',
                              self.normalization,
                              is_training)
 
-            # _x = reshape(x, (1, 1, self.noise_dim))
-            # _x = conv2d_transpose(_x, 1024, (16, 16), strides=(1, 1), padding='valid')
-            # if self.normalization == 'batch':
-            #     _x = batch_norm(_x, is_training=is_training)
-            # _x = activation(_x, 'relu')
-
-            # residual_inputs = conv2d(_x, 64, (1, 1))
             residual_inputs = conv_block(_x,
                                          is_training=is_training,
                                          filters=64,
@@ -72,7 +81,7 @@ class ResidualGenerator(G):
             _x += residual_inputs
 
             with tf.variable_scope('upsampling_blocks'):
-                for i in range(3):
+                for i in range(nb_upsampling):
                     _x = conv_block(_x,
                                     is_training=is_training,
                                     filters=64,
@@ -107,24 +116,18 @@ class ResidualGenerator(G):
 
 class Generator(G):
     def __call__(self, x, reuse=False, is_training=True):
+        nb_upsampling = int(np.log2(self.target_size[0] // 4))
         with tf.variable_scope(self.name, reuse=reuse) as vs:
+            _x = first_block(x,
+                             (4, 4),
+                             self.noise_dim,
+                             'dense',
+                             self.normalization,
+                             is_training)
 
-            _x = dense(x, 4*4*64*16, activation_=None)
-            _x = reshape(_x, (4, 4, 64*16))
-            _x = batch_norm(_x, is_training=is_training)
-            _x = activation(_x, 'relu')
-
-            for i in range(5):
+            for i in range(nb_upsampling):
                 with tf.variable_scope(None, 'conv_blocks'):
-                    filters = 64*(2**(4 - i))
-                    _x = conv_block(_x,
-                                    is_training=is_training,
-                                    filters=filters,
-                                    activation_='relu',
-                                    sampling='same',
-                                    normalization=self.normalization,
-                                    dropout_rate=0.,
-                                    mode='conv_first')
+                    filters = 1024 // (2**(i+1))
                     _x = conv_block(_x,
                                     is_training=is_training,
                                     filters=filters,

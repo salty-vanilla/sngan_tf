@@ -20,11 +20,13 @@ class Discriminator:
 
 class Generator:
     def __init__(self, noise_dim,
+                 target_size=(128, 128),
                  last_activation='tanh',
                  color_mode='rgb',
                  normalization='batch',
                  upsampling='deconv'):
         self.noise_dim = noise_dim
+        self.target_size = target_size
         self.last_activation = last_activation
         self.name = 'model/generator'
         assert color_mode in ['grayscale', 'gray', 'rgb']

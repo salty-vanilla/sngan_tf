@@ -45,6 +45,7 @@ class GAN:
                 self.loss_g = -tf.reduce_mean(self.discriminate_fake)
                 self.loss_d = -(tf.reduce_mean(self.discriminate_real)
                                 - tf.reduce_mean(self.discriminate_fake))
+                self.loss_d += tf.nn.l2_loss(self.discriminate_real) * 0.1
             else:
                 raise NotImplementedError
 

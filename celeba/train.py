@@ -4,8 +4,8 @@ import sys
 sys.path.append(os.getcwd())
 from utils.config import args_to_csv
 from gan import GAN
-from celeba.generator import ResidualGenerator as Generator
-from celeba.discriminator import ResidualDiscriminator as Discriminator
+from celeba.generator import ResidualGenerator, Generator
+from celeba.discriminator import ResidualDiscriminator, Discriminator
 from image_sampler import ImageSampler
 from noise_sampler import NoiseSampler
 
@@ -28,6 +28,7 @@ def main():
     parser.add_argument('--lr_g', type=float, default=1e-4)
     parser.add_argument('--norm_d', type=str, default=None)
     parser.add_argument('--norm_g', type=str, default=None)
+    parser.add_argument('--model', type=str, default='residual')
 
     args = parser.parse_args()
 
@@ -40,11 +41,22 @@ def main():
                                  target_size=(args.width, args.height))
     noise_sampler = NoiseSampler(args.noise_mode)
 
-    generator = Generator(args.noise_dim,
-                          upsampling=args.upsampling,
-                          normalization=args.norm_g)
-    discriminator = Discriminator(input_shape,
-                                  normalization=args.norm_d)
+    if args.model == 'residual':
+        generator = ResidualGenerator(args.noise_dim,
+                                      target_size=(args.width, args.height),
+                                      upsampling=args.upsampling,
+                                      normalization=args.norm_g)
+        discriminator = ResidualDiscriminator(input_shape,
+                                              normalization=args.norm_d)
+    elif args.model == 'plane':
+        generator = Generator(args.noise_dim,
+                              upsampling=args.upsampling,
+                              normalization=args.norm_g)
+        discriminator = Discriminator(input_shape,
+                                      normalization=args.norm_d)
+    else:
+        raise ValueError
+
     gan = GAN(generator,
               discriminator,
               metrics=args.metrics,

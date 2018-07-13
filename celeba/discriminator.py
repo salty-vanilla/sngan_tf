@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 from layers import conv2d, dense, flatten, activation, global_average_pool2d
 from sn_layers import sn_dense
 from blocks import conv_block
@@ -38,6 +39,11 @@ def discriminator_block(x,
 
 class ResidualDiscriminator(D):
     def __call__(self, x, reuse=True, is_feature=False, is_training=True):
+        nb_downsampling = int(np.log2(self.input_shape[0] // 4))
+        nb_blocks = [2]
+        if nb_downsampling-2 > 0:
+            nb_blocks += [4]*(nb_downsampling-2)
+
         with tf.variable_scope(self.name) as vs:
             if reuse:
                 vs.reuse_variables()
@@ -51,7 +57,7 @@ class ResidualDiscriminator(D):
                             sampling='down',
                             normalization=self.normalization)
 
-            for index, nb_block in enumerate([2, 4, 4, 4, 4]):
+            for index, nb_block in enumerate(nb_blocks):
                 for i in range(nb_block):
                     _x = discriminator_block(_x,
                                              is_training=is_training,
@@ -87,17 +93,14 @@ class ResidualDiscriminator(D):
 
 class Discriminator(D):
     def __call__(self, x, reuse=True, is_feature=False, is_training=True):
+        nb_downsampling = int(np.log2(self.input_shape[0] // 4))
         with tf.variable_scope(self.name, reuse=reuse) as vs:
+            if reuse:
+                vs.reuse_variables()
             _x = x
             first_filters = 32
-            for i in range(4):
+            for i in range(nb_downsampling):
                 filters = first_filters * (2**i)
-                _x = conv_block(_x,
-                                is_training=is_training,
-                                filters=filters,
-                                activation_='lrelu',
-                                sampling='same',
-                                normalization=self.normalization)
                 _x = conv_block(_x,
                                 is_training=is_training,
                                 filters=filters,
